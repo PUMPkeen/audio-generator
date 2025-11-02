@@ -1,0 +1,15 @@
+# .gitignore
+
+# Environment variables
+.env
+.env.local
+
+# Vercel deployment files
+.vercel
+
+# macOS specific files
+.DS_Store
+
+# IDE/Editor specific files
+.vscode/
+.idea/
