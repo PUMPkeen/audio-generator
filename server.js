@@ -1,31 +1,33 @@
+import express from 'express';
 import fetch from 'node-fetch';
+import 'dotenv/config';
 
-// Это Serverless Function, которая будет запускаться Vercel на каждый запрос
-export default async function handler(req, res) {
-    // 1. Проверяем, что это POST-запрос
-    if (req.method !== 'POST') {
-        res.setHeader('Allow', ['POST']);
-        return res.status(405).json({ error: 'Method Not Allowed' });
-    }
+// --- Инициализация ---
+const app = express();
+app.use(express.json());
+app.use(express.static('.'));
 
-    // 2. Получаем токен из переменных окружения Vercel
-    const poeToken = process.env.POE_TOKEN;
-    if (!poeToken) {
-        console.error('POE_TOKEN не установлен в переменных окружения Vercel.');
-        return res.status(500).json({ error: 'Server configuration error.' });
-    }
+console.log('Чтение POE_TOKEN из окружения...');
+const poeToken = process.env.POE_TOKEN;
 
-    // 3. Получаем текст из тела запроса
+if (!poeToken) {
+    console.error('POE_TOKEN не установлен в файле .env.');
+    process.exit(1);
+}
+
+console.log('Сервер инициализирован.');
+
+// --- Основной маршрут для генерации аудио ---
+app.post('/generate-audio', async (req, res) => {
     const { text } = req.body;
     if (!text) {
-        return res.status(400).json({ error: 'Text is required in the request body.' });
+        return res.status(400).json({ error: 'Text is required' });
     }
 
     console.log(`Получен текст для генерации: "${text}"`);
+    console.log('Шаг 1: Отправка запроса к Poe API для получения URL...');
 
     try {
-        // --- ШАГ А: Получаем URL аудиофайла от Poe API ---
-        console.log('Шаг А: Отправка запроса к Poe API для получения URL...');
         const apiResponse = await fetch('https://api.poe.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -45,10 +47,10 @@ export default async function handler(req, res) {
             return res.status(apiResponse.status).json({ error: `Poe API Error: ${errorBody}` });
         }
 
-        // Собираем URL из потокового ответа
+        // Собираем URL из потока
         const audioUrl = await new Promise((resolve, reject) => {
             let fullContentUrl = '';
-            let responseText = '';
+            let responseText = ''; // Для отладки
 
             apiResponse.body.on('data', (chunk) => {
                 responseText += chunk.toString('utf-8');
@@ -62,6 +64,7 @@ export default async function handler(req, res) {
                         
                         try {
                             const data = JSON.parse(dataJson);
+                            // Ищем фрагмент контента в ответе
                             const contentPart = data.choices?.[0]?.delta?.content;
                             if (contentPart) {
                                 fullContentUrl += contentPart;
@@ -85,32 +88,40 @@ export default async function handler(req, res) {
         });
 
         if (!audioUrl || !audioUrl.startsWith('http')) {
-            console.error('Не удалось получить валидный URL на аудиофайл. Получено:', audioUrl);
+            console.error('Не удалось получить валидный URL на аудиофайл от Poe API. Получено:', audioUrl);
             return res.status(500).json({ error: 'API response did not contain a valid audio URL.' });
         }
 
-        console.log('Шаг А завершен. Получен URL:', audioUrl);
+        console.log('Шаг 1 завершен. Получен URL аудиофайла:', audioUrl);
+        console.log('Шаг 2: Скачивание аудиофайла по полученному URL...');
 
-        // --- ШАГ Б: Скачиваем аудиофайл по полученному URL ---
-        console.log('Шаг Б: Скачивание аудиофайла по URL...');
+        // Шаг 2: Скачиваем аудио по полученной ссылке
         const audioResponse = await fetch(audioUrl);
         if (!audioResponse.ok) {
             console.error(`Не удалось скачать аудиофайл. Статус: ${audioResponse.status} ${audioResponse.statusText}`);
-            return res.status(500).json({ error: 'Failed to download the audio file.' });
+            return res.status(500).json({ error: 'Failed to download the audio file from the provided URL.' });
         }
 
-        // Используем .arrayBuffer() - это современный стандарт
-        const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
-        console.log('Шаг Б завершен. Аудиофайл скачан. Размер (байт):', audioBuffer.length);
-
-        // --- ШАГ В: Отправляем аудио клиенту (в браузер) ---
+        // Преобразуем ответ в буфер
+        const audioBuffer = await audioResponse.buffer();
+        console.log('Шаг 2 завершен. Аудиофайл скачан. Размер (байт):', audioBuffer.length);
+        
+        // Шаг 3: Отправляем аудио клиенту
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('Content-Length', audioBuffer.length);
-        res.status(200).send(audioBuffer);
-        console.log('Шаг В завершен. Аудиофайл успешно отправлен клиенту.');
+        res.send(audioBuffer);
+
+        console.log('Шаг 3 завершен. Аудиофайл успешно отправлен клиенту.');
 
     } catch (error) {
-        console.error('Произошла глобальная ошибка в Serverless Function:', error);
-        res.status(500).json({ error: 'An internal server error occurred.' });
+        console.error('Произошла глобальная ошибка:', error);
+        res.status(500).json({ error: 'An error occurred on the server.' });
     }
-}
+});
+
+// --- Запуск сервера ---
+const PORT = 3000;
+app.listen(PORT, () => {
+    console.log(`Сервер запущен на http://localhost:${PORT}`);
+    console.log(`Откройте http://localhost:${PORT} в вашем браузере`);
+});

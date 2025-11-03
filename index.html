@@ -3,240 +3,128 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Инструмент TTS от Poe (модель ElevenLabs-v3)</title>
+    <title>Генератор Аудио</title>
     <style>
-        :root {
-            --primary-color: #0070f3;
-            --background-color: #f0f2f5;
-            --card-background: #ffffff;
-            --text-color: #333;
-            --subtle-text: #666;
-            --border-color: #eaeaea;
-            --error-color: #e53e3e;
-            --success-color: #48bb78;
-        }
-
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background-color: var(--background-color);
-            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
             margin: 0;
-            padding: 20px;
-            box-sizing: border-box;
+            background-color: #f0f2f5;
+            color: #1c1e21;
         }
-
         .container {
-            width: 100%;
-            max-width: 600px;
-            background-color: var(--card-background);
-            border-radius: 12px;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+            background: white;
             padding: 2rem;
-            box-sizing: border-box;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 500px;
+            text-align: center;
         }
-
         h1 {
-            text-align: center;
-            margin-top: 0;
-            margin-bottom: 0.5rem;
-            font-size: 1.75rem;
-        }
-        
-        .subtitle {
-            text-align: center;
-            margin-bottom: 2rem;
-            color: var(--subtle-text);
-        }
-
-        .form-group {
+            color: #333;
             margin-bottom: 1.5rem;
         }
-
-        label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-        }
-
         textarea {
             width: 100%;
-            min-height: 120px;
             padding: 0.75rem;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
             font-size: 1rem;
-            font-family: inherit;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            margin-bottom: 1rem;
+            min-height: 100px;
             resize: vertical;
-            transition: border-color 0.2s, box-shadow 0.2s;
         }
-
-        textarea:focus {
-            outline: none;
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(0, 112, 243, 0.2);
-        }
-
         button {
             width: 100%;
-            padding: 0.85rem 1rem;
-            border: none;
-            border-radius: 8px;
-            background-color: var(--primary-color);
-            color: white;
+            padding: 0.75rem;
             font-size: 1rem;
-            font-weight: 600;
+            font-weight: bold;
+            color: white;
+            background-color: #007bff;
+            border: none;
+            border-radius: 6px;
             cursor: pointer;
-            transition: background-color 0.2s, transform 0.1s;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 0.5rem;
+            transition: background-color 0.2s;
         }
-
-        button:hover:not(:disabled) {
-            background-color: #005bb5;
-        }
-
-        button:active:not(:disabled) {
-            transform: scale(0.98);
-        }
-
         button:disabled {
-            background-color: #a0aec0;
+            background-color: #a0cffc;
             cursor: not-allowed;
         }
-
-        .spinner {
-            width: 18px;
-            height: 18px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-top-color: #fff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        button:hover:not(:disabled) {
+            background-color: #0056b3;
         }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        #audio-container {
-            margin-top: 2rem;
-        }
-
-        audio {
-            width: 100%;
-            border-radius: 8px;
-        }
-        
-        #status-message {
-            text-align: center;
+        .status {
             margin-top: 1rem;
-            font-weight: 500;
-            height: 20px; /* Reserve space to prevent layout shift */
+            color: #666;
+            min-height: 20px;
         }
-        
-        .error {
-            color: var(--error-color);
-        }
-        
-        .success {
-            color: var(--success-color);
-        }
-
     </style>
 </head>
 <body>
-
     <div class="container">
-        <h1>Генератор аудио</h1>
-        <p class="subtitle">на базе модели <strong>ElevenLabs-v3</strong></p>
-        
-        <div class="form-group">
-            <label for="text-input">Текст для озвучивания</label>
-            <textarea id="text-input" placeholder="Введите текст здесь..."></textarea>
-        </div>
-
-        <button id="generate-btn">
-            <span id="btn-text">Сгенерировать аудио</span>
-            <div id="btn-spinner" class="spinner" style="display: none;"></div>
-        </button>
-        
-        <div id="status-message"></div>
-
-        <div id="audio-container" style="display: none;">
-            <audio id="audio-player" controls></audio>
-        </div>
+        <h1>Генератор Аудио</h1>
+        <textarea id="text-input" placeholder="Введите текст для озвучивания..."></textarea>
+        <button id="generate-btn">Сгенерировать аудио</button>
+        <div id="status" class="status"></div>
+        <audio id="audio-player" controls style="display: none; width: 100%; margin-top: 1rem;"></audio>
     </div>
 
     <script>
-        const generateBtn = document.getElementById('generate-btn');
         const textInput = document.getElementById('text-input');
-        const audioContainer = document.getElementById('audio-container');
+        const generateBtn = document.getElementById('generate-btn');
+        const statusDiv = document.getElementById('status');
         const audioPlayer = document.getElementById('audio-player');
-        const statusMessage = document.getElementById('status-message');
-        const btnText = document.getElementById('btn-text');
-        const btnSpinner = document.getElementById('btn-spinner');
 
         generateBtn.addEventListener('click', async () => {
             const text = textInput.value.trim();
             if (!text) {
-                showStatus('Пожалуйста, введите текст.', 'error');
+                statusDiv.textContent = 'Пожалуйста, введите текст.';
                 return;
             }
 
-            setLoading(true);
-            clearStatus();
-            audioContainer.style.display = 'none';
+            // Блокируем кнопку и показываем статус
+            generateBtn.disabled = true;
+            statusDiv.textContent = 'Генерация аудио, пожалуйста, подождите...';
+            audioPlayer.style.display = 'none';
 
             try {
+                // Отправляем запрос на наш Serverless Function эндпоинт
                 const response = await fetch('/api/generate', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text }),
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text: text }),
                 });
 
                 if (!response.ok) {
                     const errorData = await response.json();
-                    throw new Error(errorData.error || `HTTP ошибка! Статус: ${response.status}`);
+                    throw new Error(errorData.error || 'Произошла ошибка на сервере.');
                 }
 
+                // Получаем аудиоданные в виде Blob
                 const audioBlob = await response.blob();
                 const audioUrl = URL.createObjectURL(audioBlob);
-                
+
+                // Отображаем плеер и проигрываем аудио
                 audioPlayer.src = audioUrl;
-                audioContainer.style.display = 'block';
-                showStatus('Аудио успешно сгенерировано!', 'success');
+                audioPlayer.style.display = 'block';
+                audioPlayer.play();
+                statusDiv.textContent = 'Аудио успешно сгенерировано!';
 
             } catch (error) {
-                console.error('Ошибка при генерации аудио:', error);
-                showStatus(`Ошибка: ${error.message}`, 'error');
+                console.error('Ошибка:', error);
+                statusDiv.textContent = `Ошибка: ${error.message}`;
             } finally {
-                setLoading(false);
+                // Разблокируем кнопку в любом случае
+                generateBtn.disabled = false;
             }
         });
-
-        function setLoading(isLoading) {
-            generateBtn.disabled = isLoading;
-            btnText.style.display = isLoading ? 'none' : 'inline';
-            btnSpinner.style.display = isLoading ? 'block' : 'none';
-        }
-        
-        function showStatus(message, type = 'info') {
-            statusMessage.textContent = message;
-            statusMessage.className = type; // 'error', 'success', or ''
-        }
-        
-        function clearStatus() {
-            statusMessage.textContent = '';
-            statusMessage.className = '';
-        }
-
     </script>
 </body>
 </html>
