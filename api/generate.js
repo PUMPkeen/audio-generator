@@ -57,17 +57,26 @@ export default async function handler(req, res) {
         const audioUrl = await Promise.race([
             new Promise((resolve, reject) => {
                 let fullContentUrl = '';
-                let responseText = '';
+                let buffer = '';
+                let hasReceivedData = false;
 
                 apiResponse.body.on('data', (chunk) => {
-                    responseText += chunk.toString('utf-8');
-                    const events = responseText.split('\n\n');
-                    responseText = events.pop() || '';
-
-                    for (const line of events) {
-                        if (line.startsWith('data: ')) {
-                            const dataJson = line.substring(6);
-                            if (dataJson.trim() === '[DONE]') {
+                    hasReceivedData = true;
+                    buffer += chunk.toString('utf-8');
+                    
+                    // Parse complete lines (SSE format: data: {...}\n\n)
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+                    
+                    for (const line of lines) {
+                        const trimmedLine = line.trim();
+                        if (!trimmedLine) continue;
+                        
+                        if (trimmedLine.startsWith('data: ')) {
+                            const dataJson = trimmedLine.substring(6).trim();
+                            
+                            if (dataJson === '[DONE]') {
+                                console.log('Получен маркер [DONE] от Poe API.');
                                 resolve(fullContentUrl);
                                 return;
                             }
@@ -75,18 +84,41 @@ export default async function handler(req, res) {
                             try {
                                 const data = JSON.parse(dataJson);
                                 const contentPart = data.choices?.[0]?.delta?.content;
+                                
                                 if (contentPart) {
                                     fullContentUrl += contentPart;
+                                    console.log(`Получен фрагмент URL (общая длина: ${fullContentUrl.length} символов)`);
                                 }
                             } catch (e) {
-                                console.log('Не удалось распарсить JSON из строки:', dataJson);
+                                console.log('Не удалось распарсить JSON из строки:', dataJson.substring(0, 100));
                             }
                         }
                     }
                 });
 
                 apiResponse.body.on('end', () => {
-                    console.log('Поток от Poe API завершен.');
+                    console.log('Поток от Poe API завершен. Получено символов URL:', fullContentUrl.length);
+                    console.log('Первые 100 символов URL:', fullContentUrl.substring(0, 100));
+                    
+                    // Process any remaining buffer
+                    if (buffer.trim()) {
+                        const trimmedBuffer = buffer.trim();
+                        if (trimmedBuffer.startsWith('data: ')) {
+                            const dataJson = trimmedBuffer.substring(6).trim();
+                            if (dataJson !== '[DONE]') {
+                                try {
+                                    const data = JSON.parse(dataJson);
+                                    const contentPart = data.choices?.[0]?.delta?.content;
+                                    if (contentPart) {
+                                        fullContentUrl += contentPart;
+                                    }
+                                } catch (e) {
+                                    console.log('Не удалось распарсить последний JSON:', dataJson.substring(0, 100));
+                                }
+                            }
+                        }
+                    }
+                    
                     resolve(fullContentUrl);
                 });
 
@@ -94,22 +126,43 @@ export default async function handler(req, res) {
                     console.error('Ошибка в потоке ответа:', err);
                     reject(err);
                 });
+                
+                // Add a check after a short delay to ensure we received data
+                setTimeout(() => {
+                    if (!hasReceivedData) {
+                        console.error('Не получено данных от Poe API в течение 5 секунд');
+                        reject(new Error('Poe API не отправил данные в потоке'));
+                    }
+                }, 5000);
             }),
             new Promise((_, reject) => 
                 setTimeout(() => reject(new Error('Timeout: Poe API не ответил в течение 60 секунд')), 60000)
             )
         ]);
 
-        if (!audioUrl || !audioUrl.startsWith('http')) {
-            console.error('Не удалось получить валидный URL на аудиофайл. Получено:', audioUrl);
-            return res.status(500).json({ error: 'API response did not contain a valid audio URL.' });
+        // Clean up the URL - remove any extra whitespace or newlines
+        const cleanedUrl = audioUrl.trim();
+        
+        if (!cleanedUrl || cleanedUrl.length === 0) {
+            console.error('Получен пустой URL от Poe API. Полная длина:', audioUrl.length);
+            return res.status(500).json({ 
+                error: 'API response did not contain a valid audio URL. The stream was empty.' 
+            });
+        }
+        
+        if (!cleanedUrl.startsWith('http')) {
+            console.error('Получен невалидный URL от Poe API. Первые 200 символов:', cleanedUrl.substring(0, 200));
+            console.error('Полная длина:', cleanedUrl.length);
+            return res.status(500).json({ 
+                error: `API response did not contain a valid audio URL. Received: ${cleanedUrl.substring(0, 100)}...` 
+            });
         }
 
-        console.log('Шаг А завершен. Получен URL:', audioUrl);
+        console.log('Шаг А завершен. Получен URL (длина:', cleanedUrl.length, '):', cleanedUrl.substring(0, 100) + '...');
 
         // --- ШАГ Б: Скачиваем аудиофайл по полученному URL ---
         console.log('Шаг Б: Скачивание аудиофайла по URL...');
-        const audioResponse = await fetch(audioUrl);
+        const audioResponse = await fetch(cleanedUrl);
         if (!audioResponse.ok) {
             console.error(`Не удалось скачать аудиофайл. Статус: ${audioResponse.status} ${audioResponse.statusText}`);
             return res.status(500).json({ error: 'Failed to download the audio file.' });
