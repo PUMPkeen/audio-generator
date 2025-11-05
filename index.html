@@ -5,126 +5,475 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Генератор Аудио</title>
     <style>
+        :root {
+            --primary-color: #007bff;
+            --primary-hover-color: #0056b3;
+            --background-color: #f8f9fa;
+            --text-color: #212529;
+            --container-bg-color: #ffffff;
+            --border-color: #dee2e6;
+            --error-color: #dc3545;
+            --success-color: #28a745;
+            --progress-bar-bg: #e9ecef;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: var(--font-family);
+            background-color: var(--background-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             min-height: 100vh;
-            margin: 0;
-            background-color: #f0f2f5;
-            color: #1c1e21;
         }
+
         .container {
-            background: white;
-            padding: 2rem;
+            background-color: var(--container-bg-color);
+            padding: 30px;
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            width: 90%;
-            max-width: 500px;
-            text-align: center;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 700px;
+            box-sizing: border-box;
         }
+
         h1 {
-            color: #333;
-            margin-bottom: 1.5rem;
+            text-align: center;
+            color: var(--text-color);
+            margin-bottom: 25px;
         }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
         textarea {
             width: 100%;
-            padding: 0.75rem;
-            font-size: 1rem;
-            border: 1px solid #ccc;
-            border-radius: 6px;
+            height: 200px;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 16px;
+            line-height: 1.5;
             box-sizing: border-box;
-            margin-bottom: 1rem;
-            min-height: 100px;
             resize: vertical;
         }
+
+        .char-counter {
+            text-align: right;
+            font-size: 14px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+
         button {
             width: 100%;
-            padding: 0.75rem;
-            font-size: 1rem;
-            font-weight: bold;
+            padding: 12px;
+            background-color: var(--primary-color);
             color: white;
-            background-color: #007bff;
             border: none;
-            border-radius: 6px;
+            border-radius: 4px;
+            font-size: 18px;
             cursor: pointer;
             transition: background-color 0.2s;
+            margin-top: 20px;
         }
+
+        button:hover:not(:disabled) {
+            background-color: var(--primary-hover-color);
+        }
+
         button:disabled {
-            background-color: #a0cffc;
+            background-color: #a0c7ff;
             cursor: not-allowed;
         }
-        button:hover:not(:disabled) {
-            background-color: #0056b3;
+
+        .spinner {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+            vertical-align: middle;
         }
-        .status {
-            margin-top: 1rem;
-            color: #666;
-            min-height: 20px;
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        #status-container {
+            margin-top: 25px;
+        }
+        
+        .status-message {
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            display: none;
+        }
+
+        .status-message.error {
+            background-color: #f8d7da;
+            color: var(--error-color);
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        
+        .status-message.success {
+            background-color: #d4edda;
+            color: var(--success-color);
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        #chunks-container {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .chunk {
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 15px;
+        }
+
+        .chunk-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            background-color: var(--progress-bar-bg);
+            border-radius: 4px;
+            overflow: hidden;
+            height: 8px;
+            margin-bottom: 10px;
+        }
+
+        .progress-bar-inner {
+            height: 100%;
+            width: 0;
+            background-color: var(--primary-color);
+            transition: width 0.3s ease-in-out;
+        }
+        
+        .chunk-error {
+            color: var(--error-color);
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+
+        audio {
+            width: 100%;
+            margin-top: 10px;
         }
     </style>
 </head>
 <body>
+
     <div class="container">
         <h1>Генератор Аудио</h1>
-        <textarea id="text-input" placeholder="Введите текст для озвучивания..."></textarea>
+
+        <label for="text-input">Введите текст для озвучивания:</label>
+        <textarea id="text-input" placeholder="Например, 'Привет, мир!'"></textarea>
+        <div class="char-counter"><span id="char-count">0</span> символов</div>
+
         <button id="generate-btn">Сгенерировать аудио</button>
-        <div id="status" class="status"></div>
-        <audio id="audio-player" controls style="display: none; width: 100%; margin-top: 1rem;"></audio>
+
+        <div id="status-container">
+            <div id="main-status-message" class="status-message"></div>
+        </div>
+        
+        <div id="chunks-container"></div>
     </div>
 
     <script>
         const textInput = document.getElementById('text-input');
         const generateBtn = document.getElementById('generate-btn');
-        const statusDiv = document.getElementById('status');
-        const audioPlayer = document.getElementById('audio-player');
+        const charCount = document.getElementById('char-count');
+        const chunksContainer = document.getElementById('chunks-container');
+        const mainStatusMessage = document.getElementById('main-status-message');
+        
+        const MAX_CHARS = 20000;
+        const CHUNK_SIZE = 1900; // Poe API limit is 2000, using 1900 for safety margin
+
+        textInput.addEventListener('input', () => {
+            const count = textInput.value.length;
+            charCount.textContent = count;
+            charCount.style.color = '#6c757d';
+            generateBtn.disabled = count === 0;
+        });
 
         generateBtn.addEventListener('click', async () => {
-            const text = textInput.value.trim();
-            if (!text) {
-                statusDiv.textContent = 'Пожалуйста, введите текст.';
-                return;
+            const fullText = textInput.value;
+            if (!fullText) return;
+
+            setLoadingState(true, 'Идет генерация...');
+            clearPreviousResults();
+
+            const chunks = splitTextIntoChunks(fullText, CHUNK_SIZE);
+            displayChunkPlaceholders(chunks);
+
+            const audioBlobs = [];
+            let hasError = false;
+
+            for (let i = 0; i < chunks.length; i++) {
+                try {
+                    const audioBlob = await generateAudioForChunk(chunks[i], i);
+                    audioBlobs.push(audioBlob);
+                    updateChunkUI(i, audioBlob, chunks.length);
+                } catch (error) {
+                    console.error(`An overall error occurred: ${error.message}`);
+                    hasError = true;
+                    updateChunkUIWithError(i, error.message, chunks.length);
+                }
             }
 
-            // Блокируем кнопку и показываем статус
-            generateBtn.disabled = true;
-            statusDiv.textContent = 'Генерация аудио, пожалуйста, подождите...';
-            audioPlayer.style.display = 'none';
+            if (!hasError && audioBlobs.length > 0) {
+                try {
+                    const finalBlob = new Blob(audioBlobs, { type: 'audio/mpeg' });
+                    displayFinalAudio(finalBlob);
+                    showMainStatus('Генерация успешно завершена!', 'success');
+                } catch (e) {
+                    showMainStatus('Ошибка при сборке финального аудиофайла.', 'error');
+                }
+            } else if (hasError) {
+                showMainStatus('Во время генерации произошла ошибка. Проверьте консоль.', 'error');
+            }
+            
+            setLoadingState(false);
+        });
 
+        function setLoadingState(isLoading, message = 'Сгенерировать аудио') {
+            generateBtn.disabled = isLoading;
+            if (isLoading) {
+                generateBtn.innerHTML = `<span class="spinner"></span>${message}`;
+            } else {
+                generateBtn.innerHTML = 'Сгенерировать аудио';
+            }
+        }
+
+        function clearPreviousResults() {
+            chunksContainer.innerHTML = '';
+            mainStatusMessage.className = 'status-message';
+            mainStatusMessage.textContent = '';
+        }
+
+        function showMainStatus(message, type) {
+            mainStatusMessage.textContent = message;
+            mainStatusMessage.className = `status-message ${type}`;
+        }
+
+        function splitTextIntoChunks(text, maxSize) {
+            // Split by sentences first (ending with . ! ?)
+            const sentenceRegex = /[^.!?]+[.!?]+/g;
+            const sentences = text.match(sentenceRegex) || [];
+            
+            // If no sentences found, split by words
+            if (sentences.length === 0) {
+                return splitByWords(text, maxSize);
+            }
+            
+            const chunks = [];
+            let currentChunk = '';
+
+            for (const sentence of sentences) {
+                const trimmedSentence = sentence.trim();
+                
+                // If current chunk + sentence would exceed limit
+                if (currentChunk.length + trimmedSentence.length + 1 > maxSize) {
+                    // Save current chunk if it has content
+                    if (currentChunk.trim()) {
+                        chunks.push(currentChunk.trim());
+                        currentChunk = '';
+                    }
+                    
+                    // If sentence itself exceeds limit, split it by words
+                    if (trimmedSentence.length > maxSize) {
+                        const wordChunks = splitByWords(trimmedSentence, maxSize);
+                        chunks.push(...wordChunks.slice(0, -1)); // Add all but last
+                        currentChunk = wordChunks[wordChunks.length - 1] || '';
+                    } else {
+                        // Sentence fits, add it
+                        currentChunk = trimmedSentence;
+                    }
+                } else {
+                    // Sentence fits, add it with space
+                    currentChunk += (currentChunk ? ' ' : '') + trimmedSentence;
+                }
+            }
+
+            // Add remaining chunk
+            if (currentChunk.trim()) {
+                chunks.push(currentChunk.trim());
+            }
+
+            // Final safety check: ensure no chunk exceeds the limit
+            return chunks.map(chunk => {
+                if (chunk.length > maxSize) {
+                    console.warn(`Chunk exceeded limit (${chunk.length} > ${maxSize}), splitting further...`);
+                    return splitByWords(chunk, maxSize);
+                }
+                return chunk;
+            }).flat();
+        }
+
+        function splitByWords(text, maxSize) {
+            const words = text.split(/\s+/);
+            const chunks = [];
+            let currentChunk = '';
+
+            for (const word of words) {
+                if (currentChunk.length + word.length + 1 > maxSize) {
+                    if (currentChunk.trim()) {
+                        chunks.push(currentChunk.trim());
+                    }
+                    currentChunk = word;
+                } else {
+                    currentChunk += (currentChunk ? ' ' : '') + word;
+                }
+            }
+
+            if (currentChunk.trim()) {
+                chunks.push(currentChunk.trim());
+            }
+
+            return chunks;
+        }
+
+        function displayChunkPlaceholders(chunks) {
+            const numChunks = chunks.length;
+            for (let i = 0; i < numChunks; i++) {
+                const chunkDiv = document.createElement('div');
+                chunkDiv.className = 'chunk';
+                chunkDiv.id = `chunk-${i}`;
+                const chunkLength = chunks[i].length;
+                chunkDiv.innerHTML = `
+                    <div class="chunk-header">Часть ${i + 1} из ${numChunks} <span style="font-weight: normal; color: #6c757d; font-size: 0.9em;">(${chunkLength} символов)</span></div>
+                    <div class="progress-bar">
+                        <div class="progress-bar-inner"></div>
+                    </div>
+                    <div class="chunk-status">В очереди...</div>
+                `;
+                chunksContainer.appendChild(chunkDiv);
+            }
+        }
+
+        // Helper function to add timeout to fetch requests
+        function fetchWithTimeout(url, options, timeout = 120000) { // 2 minutes default timeout
+            return Promise.race([
+                fetch(url, options),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Request timeout: сервер не отвечает слишком долго')), timeout)
+                )
+            ]);
+        }
+
+        async function generateAudioForChunk(text, chunkIndex) {
+            const chunkDiv = document.getElementById(`chunk-${chunkIndex}`);
+            const progressBar = chunkDiv.querySelector('.progress-bar-inner');
+            const chunkStatus = chunkDiv.querySelector('.chunk-status');
+
+            chunkStatus.textContent = 'Генерация...';
+            progressBar.style.width = '50%';
+            
             try {
-                // Отправляем запрос на наш Serverless Function эндпоинт
-                const response = await fetch('/api/generate', {
+                const response = await fetchWithTimeout('/api/generate?format=json', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json',
                     },
                     body: JSON.stringify({ text: text }),
-                });
+                }, 120000); // 2 minute timeout
 
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || 'Произошла ошибка на сервере.');
+                    // Пытаемся прочитать текст ошибки, если сервер его отправил
+                    const errorText = await response.text();
+                    // Выбрасываем ошибку, чтобы ее поймал внешний catch
+                    throw new Error(`Ошибка сервера: ${response.status}. ${errorText}`);
+                }
+                
+                // Здесь мы ожидаем JSON с полем audioData (base64)
+                const data = await response.json();
+                if (!data.audioData) {
+                    throw new Error('Некорректный ответ от сервера: отсутствует audioData.');
                 }
 
-                // Получаем аудиоданные в виде Blob
-                const audioBlob = await response.blob();
-                const audioUrl = URL.createObjectURL(audioBlob);
-
-                // Отображаем плеер и проигрываем аудио
-                audioPlayer.src = audioUrl;
-                audioPlayer.style.display = 'block';
-                audioPlayer.play();
-                statusDiv.textContent = 'Аудио успешно сгенерировано!';
+                // Преобразуем base64 в Blob
+                const byteCharacters = atob(data.audioData);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                return new Blob([byteArray], { type: 'audio/mpeg' });
 
             } catch (error) {
-                console.error('Ошибка:', error);
-                statusDiv.textContent = `Ошибка: ${error.message}`;
-            } finally {
-                // Разблокируем кнопку в любом случае
-                generateBtn.disabled = false;
+                // Эта ошибка будет поймана в основном цикле
+                console.error(`Ошибка при генерации части #${chunkIndex}: ${error.message}`);
+                // Повторно выбрасываем ошибку, чтобы она была обработана в вызывающей функции
+                throw error;
             }
-        });
+        }
+
+        function updateChunkUI(index, audioBlob, totalChunks) {
+            const chunkDiv = document.getElementById(`chunk-${index}`);
+            chunkDiv.querySelector('.progress-bar-inner').style.width = '100%';
+            chunkDiv.querySelector('.chunk-status').textContent = 'Готово!';
+            
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.src = URL.createObjectURL(audioBlob);
+            chunkDiv.appendChild(audio);
+        }
+
+        function updateChunkUIWithError(index, errorMessage, totalChunks) {
+            const chunkDiv = document.getElementById(`chunk-${index}`);
+            chunkDiv.querySelector('.progress-bar').style.backgroundColor = 'var(--error-color)';
+            chunkDiv.querySelector('.progress-bar-inner').style.width = '100%';
+            chunkDiv.querySelector('.progress-bar-inner').style.backgroundColor = 'var(--error-color)';
+            chunkDiv.querySelector('.chunk-status').textContent = 'Ошибка';
+            
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'chunk-error';
+            
+            // Проверяем, содержит ли сообщение об ошибке JSON-ошибку, и даем более понятное объяснение
+            if (errorMessage.includes("is not valid JSON")) {
+                errorDiv.textContent = `Ошибка: Не удалось обработать ответ от сервера. Вероятно, адрес API (${window.location.origin}/api/generate) недоступен или вернул ошибку.`;
+            } else {
+                errorDiv.textContent = `Ошибка: ${errorMessage}`;
+            }
+            
+            chunkDiv.appendChild(errorDiv);
+        }
+        
+        function displayFinalAudio(finalBlob) {
+            const finalAudioDiv = document.createElement('div');
+            finalAudioDiv.className = 'chunk'; // Используем тот же стиль
+            finalAudioDiv.innerHTML = '<div class="chunk-header">Полная аудиодорожка</div>';
+            
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.src = URL.createObjectURL(finalBlob);
+            
+            finalAudioDiv.appendChild(audio);
+            chunksContainer.prepend(finalAudioDiv); // Добавляем в начало списка
+        }
+
     </script>
 </body>
 </html>

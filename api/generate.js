@@ -21,6 +21,14 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Text is required in the request body.' });
     }
 
+    // Validate text length (Poe API limit is 2000 characters)
+    const MAX_TEXT_LENGTH = 2000;
+    if (text.length > MAX_TEXT_LENGTH) {
+        return res.status(400).json({ 
+            error: `Text length (${text.length} characters) exceeds the maximum limit of ${MAX_TEXT_LENGTH} characters. Please split the text into smaller chunks.` 
+        });
+    }
+
     console.log(`Получен текст для генерации: "${text}"`);
 
     try {
@@ -45,44 +53,52 @@ export default async function handler(req, res) {
             return res.status(apiResponse.status).json({ error: `Poe API Error: ${errorBody}` });
         }
 
-        // Собираем URL из потокового ответа
-        const audioUrl = await new Promise((resolve, reject) => {
-            let fullContentUrl = '';
-            let responseText = '';
+        // Собираем URL из потокового ответа с таймаутом (60 секунд)
+        const audioUrl = await Promise.race([
+            new Promise((resolve, reject) => {
+                let fullContentUrl = '';
+                let responseText = '';
 
-            apiResponse.body.on('data', (chunk) => {
-                responseText += chunk.toString('utf-8');
-                const events = responseText.split('\n\n');
-                responseText = events.pop() || '';
+                apiResponse.body.on('data', (chunk) => {
+                    responseText += chunk.toString('utf-8');
+                    const events = responseText.split('\n\n');
+                    responseText = events.pop() || '';
 
-                for (const line of events) {
-                    if (line.startsWith('data: ')) {
-                        const dataJson = line.substring(6);
-                        if (dataJson.trim() === '[DONE]') continue;
-                        
-                        try {
-                            const data = JSON.parse(dataJson);
-                            const contentPart = data.choices?.[0]?.delta?.content;
-                            if (contentPart) {
-                                fullContentUrl += contentPart;
+                    for (const line of events) {
+                        if (line.startsWith('data: ')) {
+                            const dataJson = line.substring(6);
+                            if (dataJson.trim() === '[DONE]') {
+                                resolve(fullContentUrl);
+                                return;
                             }
-                        } catch (e) {
-                            console.log('Не удалось распарсить JSON из строки:', dataJson);
+                            
+                            try {
+                                const data = JSON.parse(dataJson);
+                                const contentPart = data.choices?.[0]?.delta?.content;
+                                if (contentPart) {
+                                    fullContentUrl += contentPart;
+                                }
+                            } catch (e) {
+                                console.log('Не удалось распарсить JSON из строки:', dataJson);
+                            }
                         }
                     }
-                }
-            });
+                });
 
-            apiResponse.body.on('end', () => {
-                console.log('Поток от Poe API завершен.');
-                resolve(fullContentUrl);
-            });
+                apiResponse.body.on('end', () => {
+                    console.log('Поток от Poe API завершен.');
+                    resolve(fullContentUrl);
+                });
 
-            apiResponse.body.on('error', (err) => {
-                console.error('Ошибка в потоке ответа:', err);
-                reject(err);
-            });
-        });
+                apiResponse.body.on('error', (err) => {
+                    console.error('Ошибка в потоке ответа:', err);
+                    reject(err);
+                });
+            }),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Timeout: Poe API не ответил в течение 60 секунд')), 60000)
+            )
+        ]);
 
         if (!audioUrl || !audioUrl.startsWith('http')) {
             console.error('Не удалось получить валидный URL на аудиофайл. Получено:', audioUrl);
@@ -104,10 +120,22 @@ export default async function handler(req, res) {
         console.log('Шаг Б завершен. Аудиофайл скачан. Размер (байт):', audioBuffer.length);
 
         // --- ШАГ В: Отправляем аудио клиенту (в браузер) ---
-        res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Content-Length', audioBuffer.length);
-        res.status(200).send(audioBuffer);
-        console.log('Шаг В завершен. Аудиофайл успешно отправлен клиенту.');
+        // Проверяем, нужен ли JSON ответ (для chunking функциональности)
+        const acceptHeader = req.headers.accept || '';
+        const wantsJson = acceptHeader.includes('application/json') || req.query.format === 'json';
+        
+        if (wantsJson) {
+            // Отправляем JSON с base64-encoded аудио (для chunking)
+            const audioData = audioBuffer.toString('base64');
+            res.status(200).json({ audioData });
+            console.log('Шаг В завершен. Аудиофайл успешно отправлен клиенту (base64).');
+        } else {
+            // Отправляем бинарный аудио (для обратной совместимости)
+            res.setHeader('Content-Type', 'audio/mpeg');
+            res.setHeader('Content-Length', audioBuffer.length);
+            res.status(200).send(audioBuffer);
+            console.log('Шаг В завершен. Аудиофайл успешно отправлен клиенту (binary).');
+        }
 
     } catch (error) {
         console.error('Произошла глобальная ошибка в Serverless Function:', error);

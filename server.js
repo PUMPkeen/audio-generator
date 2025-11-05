@@ -17,40 +17,35 @@ if (!poeToken) {
 
 console.log('Сервер инициализирован.');
 
-// --- Основной маршрут для генерации аудио ---
-app.post('/generate-audio', async (req, res) => {
-    const { text } = req.body;
-    if (!text) {
-        return res.status(400).json({ error: 'Text is required' });
-    }
-
+// --- Вспомогательная функция для генерации аудио ---
+async function generateAudio(text) {
     console.log(`Получен текст для генерации: "${text}"`);
     console.log('Шаг 1: Отправка запроса к Poe API для получения URL...');
 
-    try {
-        const apiResponse = await fetch('https://api.poe.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${poeToken}`
-            },
-            body: JSON.stringify({
-                model: 'ElevenLabs-v3',
-                messages: [{ role: 'user', content: text }],
-                stream: true
-            })
-        });
+    const apiResponse = await fetch('https://api.poe.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${poeToken}`
+        },
+        body: JSON.stringify({
+            model: 'ElevenLabs-v3',
+            messages: [{ role: 'user', content: text }],
+            stream: true
+        })
+    });
 
-        if (!apiResponse.ok) {
-            const errorBody = await apiResponse.text();
-            console.error(`Ошибка от Poe API: ${apiResponse.status} ${apiResponse.statusText}`, errorBody);
-            return res.status(apiResponse.status).json({ error: `Poe API Error: ${errorBody}` });
-        }
+    if (!apiResponse.ok) {
+        const errorBody = await apiResponse.text();
+        console.error(`Ошибка от Poe API: ${apiResponse.status} ${apiResponse.statusText}`, errorBody);
+        throw new Error(`Poe API Error: ${errorBody}`);
+    }
 
-        // Собираем URL из потока
-        const audioUrl = await new Promise((resolve, reject) => {
+    // Собираем URL из потока с таймаутом (60 секунд)
+    const audioUrl = await Promise.race([
+        new Promise((resolve, reject) => {
             let fullContentUrl = '';
-            let responseText = ''; // Для отладки
+            let responseText = '';
 
             apiResponse.body.on('data', (chunk) => {
                 responseText += chunk.toString('utf-8');
@@ -60,7 +55,10 @@ app.post('/generate-audio', async (req, res) => {
                 for (const line of events) {
                     if (line.startsWith('data: ')) {
                         const dataJson = line.substring(6);
-                        if (dataJson.trim() === '[DONE]') continue;
+                        if (dataJson.trim() === '[DONE]') {
+                            resolve(fullContentUrl);
+                            return;
+                        }
                         
                         try {
                             const data = JSON.parse(dataJson);
@@ -85,37 +83,85 @@ app.post('/generate-audio', async (req, res) => {
                 console.error('Ошибка в потоке ответа:', err);
                 reject(err);
             });
+        }),
+        new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout: Poe API не ответил в течение 60 секунд')), 60000)
+        )
+    ]);
+
+    if (!audioUrl || !audioUrl.startsWith('http')) {
+        console.error('Не удалось получить валидный URL на аудиофайл от Poe API. Получено:', audioUrl);
+        throw new Error('API response did not contain a valid audio URL.');
+    }
+
+    console.log('Шаг 1 завершен. Получен URL аудиофайла:', audioUrl);
+    console.log('Шаг 2: Скачивание аудиофайла по полученному URL...');
+
+    // Шаг 2: Скачиваем аудио по полученной ссылке
+    const audioResponse = await fetch(audioUrl);
+    if (!audioResponse.ok) {
+        console.error(`Не удалось скачать аудиофайл. Статус: ${audioResponse.status} ${audioResponse.statusText}`);
+        throw new Error('Failed to download the audio file from the provided URL.');
+    }
+
+    // Преобразуем ответ в буфер
+    const audioBuffer = await audioResponse.buffer();
+    console.log('Шаг 2 завершен. Аудиофайл скачан. Размер (байт):', audioBuffer.length);
+    
+    return audioBuffer;
+}
+
+// --- Маршрут для генерации аудио (JSON с base64) ---
+app.post('/generate', async (req, res) => {
+    const { text } = req.body;
+    if (!text) {
+        return res.status(400).json({ error: 'Text is required' });
+    }
+
+    // Validate text length (Poe API limit is 2000 characters)
+    const MAX_TEXT_LENGTH = 2000;
+    if (text.length > MAX_TEXT_LENGTH) {
+        return res.status(400).json({ 
+            error: `Text length (${text.length} characters) exceeds the maximum limit of ${MAX_TEXT_LENGTH} characters. Please split the text into smaller chunks.` 
         });
+    }
 
-        if (!audioUrl || !audioUrl.startsWith('http')) {
-            console.error('Не удалось получить валидный URL на аудиофайл от Poe API. Получено:', audioUrl);
-            return res.status(500).json({ error: 'API response did not contain a valid audio URL.' });
-        }
-
-        console.log('Шаг 1 завершен. Получен URL аудиофайла:', audioUrl);
-        console.log('Шаг 2: Скачивание аудиофайла по полученному URL...');
-
-        // Шаг 2: Скачиваем аудио по полученной ссылке
-        const audioResponse = await fetch(audioUrl);
-        if (!audioResponse.ok) {
-            console.error(`Не удалось скачать аудиофайл. Статус: ${audioResponse.status} ${audioResponse.statusText}`);
-            return res.status(500).json({ error: 'Failed to download the audio file from the provided URL.' });
-        }
-
-        // Преобразуем ответ в буфер
-        const audioBuffer = await audioResponse.buffer();
-        console.log('Шаг 2 завершен. Аудиофайл скачан. Размер (байт):', audioBuffer.length);
+    try {
+        const audioBuffer = await generateAudio(text);
         
-        // Шаг 3: Отправляем аудио клиенту
+        // Преобразуем буфер в base64
+        const audioData = audioBuffer.toString('base64');
+        
+        // Отправляем JSON с base64-encoded аудио
+        res.status(200).json({ audioData });
+        console.log('Шаг 3 завершен. Аудиофайл успешно отправлен клиенту (base64).');
+
+    } catch (error) {
+        console.error('Произошла глобальная ошибка:', error);
+        res.status(500).json({ error: error.message || 'An error occurred on the server.' });
+    }
+});
+
+// --- Основной маршрут для генерации аудио (бинарный) ---
+app.post('/generate-audio', async (req, res) => {
+    const { text } = req.body;
+    if (!text) {
+        return res.status(400).json({ error: 'Text is required' });
+    }
+
+    try {
+        const audioBuffer = await generateAudio(text);
+        
+        // Отправляем аудио как бинарный файл
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('Content-Length', audioBuffer.length);
         res.send(audioBuffer);
 
-        console.log('Шаг 3 завершен. Аудиофайл успешно отправлен клиенту.');
+        console.log('Шаг 3 завершен. Аудиофайл успешно отправлен клиенту (binary).');
 
     } catch (error) {
         console.error('Произошла глобальная ошибка:', error);
-        res.status(500).json({ error: 'An error occurred on the server.' });
+        res.status(500).json({ error: error.message || 'An error occurred on the server.' });
     }
 });
 
